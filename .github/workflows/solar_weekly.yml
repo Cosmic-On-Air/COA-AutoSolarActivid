@@ -38,7 +38,7 @@ jobs:
       - name: Set stable alias for weekly video
         run: |
           set -e
-          LATEST=$(ls -1t solar_activity_videos/weekly/**/*.mp4 2>/dev/null | head -n 1 || true)
+          LATEST=$(find solar_activity_videos/weekly -type f -name '*.mp4' -printf '%T@ %p\n' | sort -nr | awk '{print $2}' | head -n 1 || true)
           if [ -z "$LATEST" ]; then
             echo "No video found to alias under solar_activity_videos/weekly/."
             exit 1
