@@ -5,3 +5,4 @@ matplotlib
 Pillow
 opencv-python-headless
 scipy
+google-api-python-client

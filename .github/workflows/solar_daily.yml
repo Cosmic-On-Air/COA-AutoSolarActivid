@@ -29,6 +29,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Google API client
+        run: pip install google-api-python-client
+
       - name: Run daily solar activity script
         run: python autovideo_daily.py
 
