@@ -1,8 +1,8 @@
-name: Auto Generate Weekly Solar Activity Video
+name: Auto Generate Solar Activity Video
 
 on:
   schedule:
-    - cron: '0 0 * * 1'   # Lundi 00:00 UTC
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 jobs:
@@ -12,6 +12,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # 🔐 RESTAURATION DES SECRETS
+      - name: Restore YouTube OAuth credentials
+        run: |
+          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > token.json
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,46 +29,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run weekly solar activity script
-        run: python autovideo_weekly.py
+      - name: Run daily solar activity script
+        run: python autovideo_daily.py
 
-      # 🔵 NOUVEAU — Upload YouTube Short
-      - name: Upload weekly video to YouTube Shorts
-        env:
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-          YOUTUBE_VIDEO_PATH: solar_activity_videos/weekly/final_video.mp4
-          COA_TYPE: WEEKLY
-          COA_DATE_LABEL: "Week $(date +'%V')"
-        run: python upload_youtube.py
+      # 🔵 UPLOAD YOUTUBE
+      - name: Upload daily video to YouTube Shorts
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          python upload_youtube.py \
+            --video solar_activity_videos/daily/final_video.mp4 \
+            --type DAILY \
+            --label "${DATE}"
 
-      # 🔵 NOUVEAU — Gestion playlists (4 semaines glissantes)
-      - name: Manage YouTube playlists (weekly retention)
-        env:
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-        run: python youtube_manage_playlists.py
+      # 🔵 PLAYLISTS (30 jours glissants)
+      - name: Manage YouTube playlists (daily)
+        run: python youtube_manage_playlists.py --type DAILY
 
-      # 🔒 CONSERVÉ — Artifacts GitHub
-      - name: Upload weekly videos as artifacts
+      # 🔒 ARTIFACTS
+      - name: Upload final videos as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: solar_activity_videos_weekly
-          path: solar_activity_videos/weekly/**/*.mp4
+          name: solar_activity_videos_daily
+          path: solar_activity_videos/daily/**/*.mp4
 
-      # 🔒 CONSERVÉ — Commit GitHub
-      - name: Commit all weekly changes in one commit
+      # 🔒 COMMIT GITHUB (inchangé)
+      - name: Commit all modified/generated files in one commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A Protons/weekly || true
-          git add -A solar_activity_videos/weekly || true
-
-          week_num=$(date +"%V")
-          start_label=$(date -d "-7 days" +"%d%m%Y")
-          end_label=$(date +"%d%m%Y")
+          git add -A Protons/daily || true
+          git add -A solar_activity_videos/daily || true
 
           if ! git diff --cached --quiet; then
-            git commit -m "Weekly update: proton JSON & solar video - Week #${week_num} (${start_label}-${end_label})"
+            git commit -m "Daily update: proton JSON and video $(date +'%d:%m:%Y')"
             git push
           else
             echo "Aucun changement à committer"

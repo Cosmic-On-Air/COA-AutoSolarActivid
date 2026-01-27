@@ -2,7 +2,7 @@ name: Auto Generate Solar Activity Video
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 01h00 UTC
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 jobs:
@@ -12,6 +12,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # 🔐 RESTAURATION DES SECRETS
+      - name: Restore YouTube OAuth credentials
+        run: |
+          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > token.json
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,29 +32,27 @@ jobs:
       - name: Run daily solar activity script
         run: python autovideo_daily.py
 
-      # 🔵 NOUVEAU — Upload YouTube Short
+      # 🔵 UPLOAD YOUTUBE
       - name: Upload daily video to YouTube Shorts
-        env:
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-          YOUTUBE_VIDEO_PATH: solar_activity_videos/daily/final_video.mp4
-          COA_TYPE: DAILY
-          COA_DATE_LABEL: $(date +'%Y-%m-%d')
-        run: python upload_youtube.py
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          python upload_youtube.py \
+            --video solar_activity_videos/daily/final_video.mp4 \
+            --type DAILY \
+            --label "${DATE}"
 
-      # 🔵 NOUVEAU — Gestion playlists (30 jours glissants)
-      - name: Manage YouTube playlists (daily retention)
-        env:
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
-        run: python youtube_manage_playlists.py
+      # 🔵 PLAYLISTS (30 jours glissants)
+      - name: Manage YouTube playlists (daily)
+        run: python youtube_manage_playlists.py --type DAILY
 
-      # 🔒 CONSERVÉ — Artifacts GitHub
+      # 🔒 ARTIFACTS
       - name: Upload final videos as artifacts
         uses: actions/upload-artifact@v4
         with:
           name: solar_activity_videos_daily
           path: solar_activity_videos/daily/**/*.mp4
 
-      # 🔒 CONSERVÉ — Commit GitHub
+      # 🔒 COMMIT GITHUB (inchangé)
       - name: Commit all modified/generated files in one commit
         run: |
           git config user.name "github-actions[bot]"
