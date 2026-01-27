@@ -1,0 +1,69 @@
+name: Auto Generate Weekly Solar Activity Video
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'   # Lundi 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run weekly solar activity script
+        run: python autovideo_weekly.py
+
+      # 🔵 NOUVEAU — Upload YouTube Short
+      - name: Upload weekly video to YouTube Shorts
+        env:
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+          YOUTUBE_VIDEO_PATH: solar_activity_videos/weekly/final_video.mp4
+          COA_TYPE: WEEKLY
+          COA_DATE_LABEL: "Week $(date +'%V')"
+        run: python upload_youtube.py
+
+      # 🔵 NOUVEAU — Gestion playlists (4 semaines glissantes)
+      - name: Manage YouTube playlists (weekly retention)
+        env:
+          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
+        run: python youtube_manage_playlists.py
+
+      # 🔒 CONSERVÉ — Artifacts GitHub
+      - name: Upload weekly videos as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: solar_activity_videos_weekly
+          path: solar_activity_videos/weekly/**/*.mp4
+
+      # 🔒 CONSERVÉ — Commit GitHub
+      - name: Commit all weekly changes in one commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A Protons/weekly || true
+          git add -A solar_activity_videos/weekly || true
+
+          week_num=$(date +"%V")
+          start_label=$(date -d "-7 days" +"%d%m%Y")
+          end_label=$(date +"%d%m%Y")
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Weekly update: proton JSON & solar video - Week #${week_num} (${start_label}-${end_label})"
+            git push
+          else
+            echo "Aucun changement à committer"
+          fi
