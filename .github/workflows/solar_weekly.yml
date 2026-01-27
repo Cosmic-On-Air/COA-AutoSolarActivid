@@ -112,9 +112,8 @@ jobs:
           echo "label=$NAME_NO_EXT" >> $GITHUB_OUTPUT
 
       - name: Upload weekly video to YouTube Shorts
-        env:
-          YOUTUBE_VIDEO_PATH: ${{ steps.weekly_label.outputs.file }}
-          COA_TYPE: WEEKLY
-          COA_DATE_LABEL: ${{ steps.weekly_label.outputs.label }}
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN_JSON }}
-        run: python upload_youtube.py
+        run: |
+          python upload_youtube.py \
+            --video "${{ steps.weekly_label.outputs.file }}" \
+            --type WEEKLY \
+            --label "${{ steps.weekly_label.outputs.label }}"

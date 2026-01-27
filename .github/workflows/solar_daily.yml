@@ -110,15 +110,14 @@ jobs:
         run: echo "label=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
       - name: Upload daily video to YouTube Shorts
-        env:
-          YOUTUBE_VIDEO_PATH: ./artifact_daily/solar_activity_videos/daily/final_video.mp4
-          COA_TYPE: DAILY
-          COA_DATE_LABEL: ${{ steps.set_date.outputs.label }}
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN_JSON }}
-        run: python upload_youtube.py
+        run: |
+          DATE=$(date +'%Y-%m-%d')
+          python upload_youtube.py \
+            --video ${{ env.YOUTUBE_VIDEO_PATH }} \
+            --type DAILY \
+            --label "${DATE}"
 
-      # 🔵 PLAYLISTS (30 jours glissants)
       - name: Manage YouTube playlists (daily)
         env:
-          YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
         run: python youtube_manage_playlists.py --type DAILY

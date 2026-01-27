@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from datetime import date
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -11,6 +12,20 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 VIDEO_PATH = os.environ.get("YOUTUBE_VIDEO_PATH", "solar_activity_videos/daily/final_video.mp4")
 COA_TYPE = os.environ.get("COA_TYPE", "DAILY")  # DAILY ou WEEKLY
 DATE_LABEL = os.environ.get("COA_DATE_LABEL", date.today().isoformat())
+
+# Sanitize helper pour enlever les caractères de contrôle
+_def_ctrl_re = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
+
+def sanitize_json_string(s: str) -> str:
+    return _def_ctrl_re.sub('', s)
+
+_raw_token = os.environ.get("YOUTUBE_TOKEN_JSON") or os.environ.get("YOUTUBE_TOKEN")
+if not _raw_token:
+    raise RuntimeError("Missing YOUTUBE_TOKEN_JSON/YOUTUBE_TOKEN in environment")
+
+token_info = json.loads(sanitize_json_string(_raw_token))
+creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+youtube = build("youtube", "v3", credentials=creds)
 
 TITLE = (
     f"COA {COA_TYPE.capitalize()} – {DATE_LABEL}  "
@@ -35,11 +50,6 @@ Attribution overlays appear on each segment.
 COA_TYPE={COA_TYPE}
 COA_GENERATED={date.today().isoformat()}
 """
-
-# YOUTUBE_TOKEN reste requis (secret)
-token_info = json.loads(os.environ["YOUTUBE_TOKEN"])  # doit être défini dans le workflow
-creds = Credentials.from_authorized_user_info(token_info, SCOPES)
-youtube = build("youtube", "v3", credentials=creds)
 
 request = youtube.videos().insert(
     part="snippet,status",

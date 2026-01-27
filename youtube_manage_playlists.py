@@ -1,12 +1,25 @@
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
-token_info = json.loads(os.environ["YOUTUBE_TOKEN"])
-creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+
+# Sanitize helper to remove control chars
+_def_ctrl_re = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
+
+def sanitize_json_string(s: str) -> str:
+    return _def_ctrl_re.sub('', s)
+
+# Read token from env with fallback and sanitize
+_raw_token = os.environ.get("YOUTUBE_TOKEN_JSON") or os.environ.get("YOUTUBE_TOKEN")
+if not _raw_token:
+    raise RuntimeError("Missing YOUTUBE_TOKEN_JSON/YOUTUBE_TOKEN in environment")
+
+_token_info = json.loads(sanitize_json_string(_raw_token))
+creds = Credentials.from_authorized_user_info(_token_info, SCOPES)
 youtube = build("youtube", "v3", credentials=creds)
 
 PLAYLISTS = {
