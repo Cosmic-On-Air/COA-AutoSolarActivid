@@ -254,7 +254,8 @@ def fetch_neutron_data(start_date, end_date, stations):
     df = df.dropna(subset=["datetime"])
     station_cols = []
     for c in df.columns[1:-1]:
-        df[c] = pd.to_numeric(pd.Series(df[c].values.flatten()), errors="coerce")
+        # Conversion robuste sans flatten() (StringArray n’a pas flatten)
+        df[c] = pd.to_numeric(df[c], errors="coerce")
         if df[c].notna().any():
             station_cols.append(c)
     if not station_cols:
