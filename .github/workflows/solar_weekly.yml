@@ -108,8 +108,11 @@ jobs:
           git add -A Protons/weekly || true
           git add -A solar_activity_videos/weekly || true
 
+          WEEK=$(date +'%V')
+          START=$(date -d '7 days ago' +'%d%m%Y')
+          END=$(date +'%d%m%Y')
           if ! git diff --cached --quiet; then
-            git commit -m "Weekly update: proton JSON and video $(date +'%d:%m:%Y')"
+            git commit -m "Weekly update: proton JSON & solar video - Week #${WEEK} (${START}-${END})"
             git push
           else
             echo "Aucun changement à committer"
