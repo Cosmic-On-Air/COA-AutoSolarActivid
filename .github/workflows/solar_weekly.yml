@@ -51,13 +51,23 @@ jobs:
       # 6. Alias stable final_video.mp4
       # ============================================================
       - name: Set stable alias for weekly video
+        shell: bash
         run: |
-          LATEST=$(find solar_activity_videos/weekly -type f -name '*.mp4' -printf '%T@ %p\n' | sort -nr | awk '{print $2}' | head -n 1)
-          if [ -z "$LATEST" ]; then
+          set -euo pipefail
+
+          LATEST="$(
+            find solar_activity_videos/weekly -type f -name '*.mp4' -print0 \
+            | xargs -0 ls -1t \
+            | head -n 1
+          )"
+
+          if [ -z "${LATEST:-}" ]; then
             echo "No weekly video found, skipping alias step."
-          else
-            cp "$LATEST" solar_activity_videos/weekly/final_video.mp4
+            exit 0
           fi
+
+          mkdir -p solar_activity_videos/weekly
+          cp -- "${LATEST}" solar_activity_videos/weekly/final_video.mp4
 
       # ============================================================
       # 7. Upload YouTube Shorts (weekly)

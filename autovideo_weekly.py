@@ -12,6 +12,7 @@ import re
 from scipy.stats import pearsonr
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import shutil  # alias copy
 
 # --- Parameters ---
 FPS = 60
@@ -467,6 +468,14 @@ if __name__ == "__main__":
 
     assemble_videos_vertically([weekly_soho_vid, proton_vid_path, neutron_vid_path], final_vid_path)
     print("✅ Weekly final video:", final_vid_path)
+
+    # Écriture de l’alias stable au même niveau que WEEKLY_ROOT
+    try:
+        alias_path = os.path.join(WEEKLY_ROOT, "final_video.mp4")
+        shutil.copyfile(final_vid_path, alias_path)
+        print("🔁 Alias written:", alias_path)
+    except Exception as e:
+        print("⚠️ Could not write alias:", e)
 
     cleanup_old_videos(SOHO_DIR)
     cleanup_old_videos(PROTON_DIR)
