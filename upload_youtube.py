@@ -1,20 +1,28 @@
 import os
 import json
+import argparse
 from datetime import datetime
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
 # ============================================================
-# 1. Chargement du token OAuth depuis l'environnement
+# 1. Arguments CLI
+# ============================================================
+
+parser = argparse.ArgumentParser(description="Upload video to YouTube Shorts")
+parser.add_argument("--video", help="Path to video file")
+parser.add_argument("--type", choices=["DAILY", "WEEKLY"], help="COA type")
+parser.add_argument("--label", help="Date / week label")
+args = parser.parse_args()
+
+# ============================================================
+# 2. OAuth token (ENV ONLY, volontairement)
 # ============================================================
 
 raw_token = os.environ.get("YOUTUBE_TOKEN_JSON") or os.environ.get("YOUTUBE_TOKEN")
-
 if not raw_token:
-    raise RuntimeError(
-        "Missing YOUTUBE_TOKEN_JSON or YOUTUBE_TOKEN in environment variables"
-    )
+    raise RuntimeError("Missing YOUTUBE_TOKEN_JSON in environment")
 
 try:
     token_info = json.loads(raw_token)
@@ -26,31 +34,40 @@ creds = Credentials.from_authorized_user_info(
     scopes=["https://www.googleapis.com/auth/youtube.upload"],
 )
 
-# ============================================================
-# 2. Client YouTube API
-# ============================================================
-
 youtube = build("youtube", "v3", credentials=creds)
 
 # ============================================================
-# 3. Paramètres vidéo (via variables d'environnement)
+# 3. Résolution des paramètres (CLI > ENV > défaut)
 # ============================================================
 
-video_path = os.environ.get("YOUTUBE_VIDEO_PATH")
-coa_type = os.environ.get("COA_TYPE", "DAILY").upper()
-coa_date_label = os.environ.get("COA_DATE_LABEL")
+video_path = (
+    args.video
+    or os.environ.get("YOUTUBE_VIDEO_PATH")
+)
 
 if not video_path or not os.path.exists(video_path):
     raise RuntimeError(f"Video file not found: {video_path}")
 
-if not coa_date_label:
-    coa_date_label = datetime.utcnow().strftime("%Y-%m-%d")
+coa_type = (
+    args.type
+    or os.environ.get("COA_TYPE")
+    or "DAILY"
+).upper()
+
+label = (
+    args.label
+    or os.environ.get("COA_DATE_LABEL")
+    or datetime.utcnow().strftime("%Y-%m-%d")
+)
 
 # ============================================================
-# 4. Titre, description, tags (Shorts publics)
+# 4. Métadonnées YouTube
 # ============================================================
 
-title = f"COA {coa_type} {coa_date_label} #cosmic #radiation #airplane #spaceweather #solarflare"
+title = (
+    f"COA {coa_type} {label} "
+    "#cosmic #radiation #airplane #spaceweather #solarflare"
+)
 
 description = (
     "Data Sources & Credits\n"
@@ -62,41 +79,33 @@ description = (
 )
 
 tags = [
-    "cosmic",
-    "radiation",
-    "airplane",
-    "spaceweather",
-    "solarflare",
-    "cosmic on air",
-    "COA",
+    "cosmic", "radiation", "airplane",
+    "spaceweather", "solarflare",
+    "cosmic on air", "COA"
 ]
 
 # ============================================================
-# 5. Upload YouTube
+# 5. Upload
 # ============================================================
 
 request = youtube.videos().insert(
     part="snippet,status",
     body={
         "snippet": {
-            "title": title[:100],  # sécurité limite YouTube
+            "title": title[:100],
             "description": description,
             "tags": tags,
-            "categoryId": "28",  # Science & Technology
+            "categoryId": "28",
         },
         "status": {
             "privacyStatus": "public",
             "selfDeclaredMadeForKids": False,
         },
     },
-    media_body=MediaFileUpload(
-        video_path,
-        chunksize=-1,
-        resumable=True,
-    ),
+    media_body=MediaFileUpload(video_path, resumable=True),
 )
 
-print("📤 Upload YouTube en cours...")
+print(f"📤 Upload YouTube ({coa_type}) : {video_path}")
 response = request.execute()
 
 video_id = response.get("id")
