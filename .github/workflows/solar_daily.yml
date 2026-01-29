@@ -89,8 +89,9 @@ jobs:
           git add -A Protons/daily || true
           git add -A solar_activity_videos/daily || true
 
+          YEST=$(date -u -d 'yesterday' +'%d/%m/%Y')
           if ! git diff --cached --quiet; then
-            git commit -m "Daily update: proton JSON and video $(date +'%d/%m/%Y')"
+            git commit -m "Daily update: proton JSON and video ${YEST}"
             git push
           else
             echo "Aucun changement à committer"
