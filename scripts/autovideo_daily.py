@@ -502,6 +502,16 @@ if __name__ == "__main__":
         else:
             print("ℹ️ Audio track found but mixing failed; keeping original video.")
 
+    # Write stable alias at daily root
+    alias_dir = os.path.join(BASE_DIR, "solar_activity_videos", "daily")
+    os.makedirs(alias_dir, exist_ok=True)
+    alias_path = os.path.join(alias_dir, "final_video.mp4")
+    try:
+        shutil.copyfile(final_vid_path, alias_path)
+        print(f"🔗 Alias updated: {alias_path}")
+    except Exception:
+        print("⚠️ Failed to update alias final_video.mp4")
+
     print("✅ Final video generated:", final_vid)
 
     # Cleanup
