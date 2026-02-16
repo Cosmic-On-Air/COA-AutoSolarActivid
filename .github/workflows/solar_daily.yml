@@ -45,7 +45,7 @@ jobs:
       # 5. Generate video
       # ============================================================
       - name: Run daily solar activity script
-        run: python autovideo_daily.py
+        run: python scripts/autovideo_daily.py
 
       # ============================================================
       # 6. Resolve latest video → final_video.mp4
@@ -64,7 +64,7 @@ jobs:
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
         run: |
           YEST=$(date -u -d 'yesterday' +'%d/%m/%Y')
-          python upload_youtube.py \
+          python scripts/upload_youtube.py \
             --video solar_activity_videos/daily/final_video.mp4 \
             --type DAILY \
             --label "${YEST}"

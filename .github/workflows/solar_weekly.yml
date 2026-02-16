@@ -45,7 +45,7 @@ jobs:
       # 5. Génération vidéo weekly
       # ============================================================
       - name: Run weekly solar activity script
-        run: python autovideo_weekly.py
+        run: python scripts/autovideo_weekly.py
 
       # ============================================================
       # 6. Alias stable final_video.mp4
@@ -80,7 +80,7 @@ jobs:
           YEAR=$(date +'%Y')
           LABEL="Week ${WEEK} ${YEAR}"
 
-          python upload_youtube.py \
+          python scripts/upload_youtube.py \
             --video solar_activity_videos/weekly/final_video.mp4 \
             --type WEEKLY \
             --label "${LABEL}"
