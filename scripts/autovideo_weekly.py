@@ -501,7 +501,8 @@ if __name__ == "__main__":
     assemble_videos_vertically([weekly_soho_vid, proton_vid_path, neutron_vid_path], final_vid_path)
 
     # Integrate audio track if available
-    audio_path = os.path.join(ROOT, "solar_activity_videos", "assets", "music", "track.mp3")
+    # Use repository audio location
+    audio_path = os.path.join(ROOT, "audios", "track.mp3")
     with_audio_path = os.path.join(final_dir, f"weekly_audio_{start_label}_{end_label}.mp4")
     if os.path.exists(audio_path):
         ok = add_audio_to_video(final_vid_path, audio_path, with_audio_path)
