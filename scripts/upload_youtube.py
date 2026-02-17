@@ -80,13 +80,18 @@ description = (
     "GOES Proton Flux – NOAA SWPC: https://services.swpc.noaa.gov\n"
     "NMDB Neutron Monitor Database: https://www.nmdb.eu\n\n"
     "Thanks to the providers of public data.\n"
-    "Attribution overlays appear on each segment."
+    "Attribution overlays appear on each segment.\n\n"
+    "Music: A custom version of the song 'Travelers' by Andrew Prahlow from the game Outer Wilds.\n"
+    "Travelers · Andrew Prahlow\n"
+    "Outer Wilds (Original Soundtrack)\n"
+    "\u2117 2019 Annapurna Interactive"
 )
 
 tags = [
     "cosmic", "radiation", "airplane",
     "spaceweather", "solarflare",
-    "cosmic on air", "COA"
+    "cosmic on air", "COA",
+    "outer wilds", "Andrew Prahlow", "Travelers"
 ]
 
 # ============================================================
