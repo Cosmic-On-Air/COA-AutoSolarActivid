@@ -14,6 +14,35 @@ from scipy.stats import pearsonr
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import shutil  # alias copy
+import subprocess
+
+# --- Audio integration (ffmpeg preferred, moviepy fallback) ---
+def add_audio_to_video(input_video, audio_file, output_video):
+    """Mux audio into video. Prefer ffmpeg; fallback to moviepy if not available."""
+    # Try ffmpeg
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_video),
+            "-i", str(audio_file),
+            "-c:v", "copy", "-c:a", "aac", "-shortest",
+            str(output_video),
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except Exception:
+        pass
+    # Fallback to moviepy
+    try:
+        from moviepy.editor import VideoFileClip, AudioFileClip
+        v = VideoFileClip(str(input_video))
+        a = AudioFileClip(str(audio_file))
+        v = v.set_audio(a)
+        v.write_videofile(str(output_video), codec="libx264", audio_codec="aac")
+        v.close(); a.close()
+        return True
+    except Exception:
+        return False
 
 # --- Parameters ---
 FPS = 60
@@ -470,12 +499,24 @@ if __name__ == "__main__":
     final_vid_path = os.path.join(final_dir, file_name)
 
     assemble_videos_vertically([weekly_soho_vid, proton_vid_path, neutron_vid_path], final_vid_path)
+
+    # Integrate audio track if available
+    audio_path = os.path.join(ROOT, "solar_activity_videos", "assets", "music", "track.mp3")
+    with_audio_path = os.path.join(final_dir, f"weekly_audio_{start_label}_{end_label}.mp4")
+    if os.path.exists(audio_path):
+        ok = add_audio_to_video(final_vid_path, audio_path, with_audio_path)
+        if ok:
+            try:
+                os.replace(with_audio_path, final_vid_path)
+            except Exception:
+                shutil.copyfile(with_audio_path, final_vid_path)
     print("✅ Weekly final video:", final_vid_path)
 
     # Écriture de l’alias stable au même niveau que WEEKLY_ROOT
     try:
         alias_path = os.path.join(WEEKLY_ROOT, "final_video.mp4")
-        shutil.copyfile(final_vid_path, alias_path)
+        if os.path.abspath(final_vid_path) != os.path.abspath(alias_path):
+            shutil.copyfile(final_vid_path, alias_path)
         print("🔁 Alias written:", alias_path)
     except Exception as e:
         print("⚠️ Could not write alias:", e)
