@@ -13,6 +13,36 @@ import re
 from scipy.stats import pearsonr
 import subprocess
 import shutil
+import sys
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+def _make_session() -> requests.Session:
+    """Session HTTP avec retry automatique et backoff exponentiel.
+    Réessaie jusqu'à 5 fois sur erreur réseau ou code 5xx."""
+    session = requests.Session()
+    retry = Retry(
+        total=5,
+        connect=5,
+        backoff_factor=2,          # délais : 2, 4, 8, 16, 32 s
+        status_forcelist=[500, 502, 503, 504],
+        allowed_methods=["GET"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+_SESSION = _make_session()
+
+
+def http_get(url: str, **kwargs) -> requests.Response:
+    """Wrapper requests.get avec retry intégré."""
+    return _SESSION.get(url, **kwargs)
+
 
 # --- Parameters ---
 FPS = 60
@@ -101,7 +131,7 @@ def download_soho_images(yesterday):
     os.makedirs(base_folder, exist_ok=True)
 
     lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
-    r = requests.get(lst_url, timeout=10)
+    r = http_get(lst_url, timeout=30)
     r.raise_for_status()
     image_filenames = r.text.strip().split('\n')
 
@@ -109,7 +139,7 @@ def download_soho_images(yesterday):
         img_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/{img_name}"
         img_path = os.path.join(base_folder, img_name)
         if not os.path.exists(img_path):
-            resp = requests.get(img_url, timeout=10)
+            resp = http_get(img_url, timeout=30)
             resp.raise_for_status()
             with open(img_path, 'wb') as f:
                 f.write(resp.content)
@@ -165,7 +195,7 @@ def create_soho_video(image_paths, output_path):
 # =========================
 def get_noaa_proton_data_for_yesterday():
     url = "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-3-day.json"
-    r = requests.get(url, timeout=10)
+    r = http_get(url, timeout=30)
     r.raise_for_status()
     raw = r.json()
     df = pd.DataFrame(raw)
@@ -254,7 +284,7 @@ def fetch_neutron_data(start_date, end_date, stations):
         f"start_year={start_date.year}&start_month={start_date.month:02d}&start_day={start_date.day:02d}&start_hour=00&start_min=00&"
         f"end_year={end_date.year}&end_month={end_date.month:02d}&end_day={end_date.day:02d}&end_hour=00&end_min=00&tresolution=1&yunits=0"
     )
-    r = requests.get(url, timeout=20)
+    r = http_get(url, timeout=30)
     r.raise_for_status()
 
     lines = [l.strip() for l in r.text.splitlines() if re.match(r'^\d{4}-\d{2}-\d{2}', l)]
@@ -439,7 +469,11 @@ if __name__ == "__main__":
     month_name = calendar.month_name[yesterday.month].capitalize()
 
     # --- SOHO ---
-    soho_imgs = download_soho_images(yesterday)
+    try:
+        soho_imgs = download_soho_images(yesterday)
+    except Exception as e:
+        print(f"❌ Impossible de télécharger les images SOHO : {e}", file=sys.stderr)
+        sys.exit(1)
     soho_vid_path = os.path.join(BASE_DIR, "SOHO_videos", f"soho_{date_folder_str}.mp4")
     soho_vid = create_soho_video(soho_imgs, soho_vid_path)
 
@@ -453,7 +487,11 @@ if __name__ == "__main__":
         os.rmdir(soho_folder)
 
     # --- PROTONS ---
-    proton_df, start, end, proton_raw_json = get_noaa_proton_data_for_yesterday()
+    try:
+        proton_df, start, end, proton_raw_json = get_noaa_proton_data_for_yesterday()
+    except Exception as e:
+        print(f"❌ Impossible de récupérer les données protons NOAA : {e}", file=sys.stderr)
+        sys.exit(1)
     proton_vid_path = os.path.join(BASE_DIR, f"protons_{date_folder_str}.mp4")
     proton_vid = create_proton_video(proton_df, start, end, proton_vid_path)
 
@@ -475,7 +513,11 @@ if __name__ == "__main__":
     # --- NEUTRONS ---
     neutron_stations = ["KERG", "OULU", "TERA"]
     altitudes = {"KERG": 33, "OULU": 15, "TERA": 32}
-    neutron_df, neutron_cols = fetch_neutron_data(yesterday, yesterday + timedelta(days=1), neutron_stations)
+    try:
+        neutron_df, neutron_cols = fetch_neutron_data(yesterday, yesterday + timedelta(days=1), neutron_stations)
+    except Exception as e:
+        print(f"❌ Impossible de récupérer les données neutrons NMDB : {e}", file=sys.stderr)
+        sys.exit(1)
     correlations = calculate_correlations(neutron_df, neutron_cols, neutron_stations)
 
     neutron_vid_path = os.path.join(BASE_DIR, f"neutrons_{date_folder_str}.mp4")

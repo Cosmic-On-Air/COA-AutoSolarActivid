@@ -8,6 +8,8 @@ on:
 jobs:
   daily:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       # ============================================================
@@ -52,10 +54,16 @@ jobs:
           echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
 
       # ============================================================
-      # 5. Generate video
+      # 5. Generate video (with automatic retry on network failure)
       # ============================================================
       - name: Run daily solar activity script
-        run: python scripts/autovideo_daily.py
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 45
+          max_attempts: 3
+          retry_wait_seconds: 600   # 10 min entre chaque tentative
+          command: python scripts/autovideo_daily.py
+          on_retry_command: echo "⏳ Tentative échouée (problème réseau ?), nouvelle tentative dans 10 min..."
 
       # ============================================================
       # 6. Resolve latest video → final_video.mp4

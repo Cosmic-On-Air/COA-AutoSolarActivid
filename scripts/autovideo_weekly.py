@@ -15,6 +15,35 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import shutil  # alias copy
 import subprocess
+import sys
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+def _make_session() -> requests.Session:
+    """Session HTTP avec retry automatique et backoff exponentiel.
+    Réessaie jusqu'à 5 fois sur erreur réseau ou code 5xx."""
+    session = requests.Session()
+    retry = Retry(
+        total=5,
+        connect=5,
+        backoff_factor=2,          # délais : 2, 4, 8, 16, 32 s
+        status_forcelist=[500, 502, 503, 504],
+        allowed_methods=["GET"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+_SESSION = _make_session()
+
+
+def http_get(url: str, **kwargs) -> requests.Response:
+    """Wrapper requests.get avec retry intégré."""
+    return _SESSION.get(url, **kwargs)
 
 # --- Audio integration (ffmpeg preferred, moviepy fallback) ---
 def add_audio_to_video(input_video, audio_file, output_video):
@@ -98,7 +127,7 @@ def download_soho_images(date):
     os.makedirs(base_folder, exist_ok=True)
 
     lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
-    r = requests.get(lst_url, timeout=20, verify=False)
+    r = http_get(lst_url, timeout=30, verify=False)
     r.raise_for_status()
     image_filenames = r.text.strip().split('\n')
 
@@ -106,7 +135,7 @@ def download_soho_images(date):
         img_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/{img_name}"
         img_path = os.path.join(base_folder, img_name)
         if not os.path.exists(img_path):
-            resp = requests.get(img_url, timeout=20, verify=False)
+            resp = http_get(img_url, timeout=30, verify=False)
             resp.raise_for_status()
             with open(img_path, 'wb') as f:
                 f.write(resp.content)
@@ -201,7 +230,7 @@ def merge_soho_videos_temporally(video_paths, output_path, target_frames=TOTAL_F
 # =========================
 def get_noaa_proton_data_for_week():
     url = "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-7-day.json"
-    r = requests.get(url, timeout=20, verify=False)
+    r = http_get(url, timeout=30, verify=False)
     r.raise_for_status()
     raw = r.json()
     df = pd.DataFrame(raw)
@@ -459,7 +488,11 @@ if __name__ == "__main__":
     cleanup_old_videos(SOHO_DIR)
 
     # --- PROTONS weekly ---
-    proton_df, start, end, proton_weekly_raw = get_noaa_proton_data_for_week()
+    try:
+        proton_df, start, end, proton_weekly_raw = get_noaa_proton_data_for_week()
+    except Exception as e:
+        print(f"❌ Impossible de récupérer les données protons NOAA : {e}", file=sys.stderr)
+        sys.exit(1)
     proton_vid_path = os.path.join(PROTON_DIR, f"protons_weekly_{date_folder_str}.mp4")
     create_proton_video(proton_df, start, end, proton_vid_path)
     cleanup_old_videos(PROTON_DIR)
@@ -484,7 +517,11 @@ if __name__ == "__main__":
     # --- NEUTRONS weekly ---
     neutron_stations = ["KERG", "OULU", "TERA"]
     altitudes = {"KERG": 33, "OULU": 15, "TERA": 32}
-    neutron_df, neutron_cols = fetch_neutron_data(start_date, today, neutron_stations)
+    try:
+        neutron_df, neutron_cols = fetch_neutron_data(start_date, today, neutron_stations)
+    except Exception as e:
+        print(f"❌ Impossible de récupérer les données neutrons NMDB : {e}", file=sys.stderr)
+        sys.exit(1)
     correlations = calculate_correlations(neutron_df, neutron_cols, neutron_stations)
     neutron_vid_path = os.path.join(NEUTRON_DIR, f"neutrons_weekly_{date_folder_str}.mp4")
     create_neutron_video(neutron_df, neutron_cols, neutron_stations, altitudes, neutron_vid_path)
