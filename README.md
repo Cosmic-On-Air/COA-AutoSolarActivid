@@ -1,228 +1,170 @@
 # COA-AutoSolarActivid
 
-Generates solar activity videos (daily and weekly), uploads to YouTube, and archives artifacts in the correct locations.
+Génère des vidéos d'activité solaire (quotidiennes et hebdomadaires), les publie sur YouTube et archive les fichiers produits.
 
-## Project structure
+## Table des matières
 
-- `scripts/`: Python scripts (daily/weekly, YouTube upload, token, playlists)
-- `solar_activity_videos/`: video outputs and alias `final_video.mp4`
-- `Protons/`: NOAA GOES data (proton flux)
-- `database/`: caches/images/metadata
-- `requirements.txt`: Python dependencies
-- `.github/workflows/`: CI for daily/weekly
-- `client_secret.json`, `token.json`: YouTube OAuth at project root
+1. [Structure du projet](#structure-du-projet)
+2. [Installation](#installation)
+3. [Utilisation locale](#utilisation-locale)
+4. [GitHub Actions & YouTube](#github-actions--youtube)
+5. [Audio et musique](#audio-et-musique)
+6. [Paramètres & personnalisation](#paramètres--personnalisation)
+7. [Dépannage](#dépannage)
+8. [Sources de données & crédits](#sources-de-données--crédits)
+9. [Contribuer](#contribuer)
+10. [Licence](#licence)
 
-## Paths and outputs
+---
 
-- All scripts compute the project root as the parent of `scripts/` and write to the expected top-level folders (never inside `scripts/`).
-- The daily pipeline produces a final video with embedded audio and updates the alias `solar_activity_videos/final_video.mp4` directly from the Python script.
-- The weekly pipeline remains unchanged script-wise and keeps its weekly alias (audio is not added to weekly by design).
+## Structure du projet
 
-## Embedded audio (daily only)
+```
+COA-AutoSolarActivid/
+├── scripts/
+│   ├── autovideo_daily.py       # Génération vidéo quotidienne
+│   ├── autovideo_weekly.py      # Génération vidéo hebdomadaire
+│   ├── upload_youtube.py        # Upload YouTube
+│   ├── generate_token.py        # Génération du token OAuth
+│   └── youtube_manage_playlists.py
+├── solar_activity_videos/
+│   ├── daily/<YYYY>/<Month>/DDMMYYYY_solar_activity.mp4
+│   ├── daily/final_video.mp4    # Alias vers la dernière vidéo
+│   ├── weekly/<YYYY>/<Month>/Week n°X (DDMMYYYY-DDMMYYYY).mp4
+│   └── weekly/final_video.mp4
+├── Protons/
+│   ├── daily/                   # JSON GOES quotidiens
+│   └── weekly/                  # JSON GOES hebdomadaires
+├── .github/workflows/
+│   ├── solar_daily.yml
+│   └── solar_weekly.yml
+├── client_secret.json           # OAuth YouTube (à la racine)
+├── token.json                   # Token OAuth (à la racine)
+└── requirements.txt
+```
 
-- `scripts/autovideo_daily.py` embeds the audio track `track.mp3` into the final video.
-- Preferred method: ffmpeg (`-c:v copy -c:a aac -shortest`).
-- Automatic fallback: `moviepy` when ffmpeg is not available.
-- The output name remains the same: referenced by the alias `final_video.mp4`.
+> Les dossiers temporaires `SOHO_videos/`, `SOHO_7days/`, `Protons_7days/`, `Neutrons_7days/` sont créés à l'exécution puis nettoyés.
 
-## YouTube metadata
-
-- Description: includes music credits (Travelers — Andrew Prahlow, Outer Wilds OST, ℗ 2019 Annapurna Interactive).
-- Tags: include `outer wilds`, `Andrew Prahlow`, `Travelers` along with existing tags.
-- Upload handled by `scripts/upload_youtube.py`, resolving paths relative to the project root.
-
-## CI (GitHub Actions)
-
-- Workflows: `.github/workflows/solar_daily.yml` and `.github/workflows/solar_weekly.yml` invoke scripts from `scripts/`.
-- `actions/checkout@v4` with `fetch-depth: 0` for full history.
-- `git pull --rebase` before `git push` to reduce update conflicts.
-- YAML alias steps are safeguarded (avoid copying onto itself), but the daily alias is primarily managed by the Python script.
-
-## Local setup and run
-
-Prerequisites: conda and an environment (e.g., `solar`).
-
-1. Activate the environment:
-   - Windows PowerShell: activate `solar`, then run scripts.
-2. Install dependencies:
-   - `pip install -r requirements.txt`
-   - Note: `moviepy` is included to ensure audio fallback when ffmpeg is unavailable.
-3. Generate the daily video:
-   - `python scripts/autovideo_daily.py`
-4. Generate the weekly video (without audio changes):
-   - `python scripts/autovideo_weekly.py`
-
-## OAuth and secrets
-
-- `client_secret.json` and `token.json` must be present at the project root.
-- `scripts/generate_token.py` reads/writes them at the root (do not move them into `scripts/`).
-
-## Troubleshooting
-
-- If `cv2` (OpenCV) is missing: install dependencies via `requirements.txt` (opencv-python-headless recommended in CI).
-- If audio is missing, ensure ffmpeg is installed; otherwise `moviepy` should take over.
-- If `git push` is rejected, CI uses `git pull --rebase`; do the same locally to resolve conflicts.
-
-## Data sources & credits
-
-- Solar imagery: SOHO (Solar and Heliospheric Observatory) / SDO (Solar Dynamics Observatory) depending on script configuration.
-  - Credit: ESA & NASA — please follow each mission’s citation guidelines.
-- Proton flux: NOAA GOES (Proton Flux, Space Weather).
-  - Credit: NOAA National Centers for Environmental Information (NCEI) / SWPC.
-- Ground neutrons: NMDB (Neutron Monitor Database) — stations and aggregations as configured.
-  - Credit: NMDB and participating stations.
-- YouTube upload & management: Google APIs (YouTube Data API v3) via `google-api-python-client`.
-  - Credit: Google Developers — API used for publishing and metadata management.
-
-Music:
-- Travelers — Andrew Prahlow (Outer Wilds OST), ℗ 2019 Annapurna Interactive. Credits are automatically added to the YouTube description.
-
-Usage & licensing notes:
-- Respect the terms of use for each dataset (NOAA/ESA/NASA/NMDB) and cite sources in descriptions when required.
-* Reduced SOHO annotation positioned bottom‑right (better readability).
-* Daily / weekly structured JSON saving (`Protons/daily`, `Protons/weekly`).
-* Automatic cleanup of old JSON files (daily >14 days, weekly >4 weeks).
-* Architecture ready to add more neutron stations (altitude mapping already handled).
-* Headless-friendly design for CI and non‑interactive runs (uses `opencv-python-headless`).
-
-## Requirements
-
-* Python 3.11 on GitHub Actions (works locally ≥3.9).
-* Core libraries:
-  * `requests`, `pandas`, `numpy`, `matplotlib`, `Pillow`
-  * `opencv-python-headless`, `scipy`
-* See `requirements.txt` for the full list.
-
-### Windows Notes
-* Use a virtual environment (`python -m venv .venv`).
-* On some systems `opencv-python-headless` may need replacing by `opencv-python` if you want local window display.
-* The `mp4v` codec normally writes without FFmpeg; if playback fails, install FFmpeg and remux.
+---
 
 ## Installation
 
-Clone the repository:
+**Prérequis :** Python ≥ 3.9 (3.11 recommandé), conda ou venv, ffmpeg optionnel.
+
 ```bash
 git clone https://github.com/Ant1data/COA-AutoSolarActivid.git
 cd COA-AutoSolarActivid
-```
-
-Install dependencies:
-```bash
 pip install -r requirements.txt
 ```
 
-## Local Usage
+> **Windows :** Sur certains systèmes, remplacer `opencv-python-headless` par `opencv-python` si un affichage fenêtré est souhaité.
 
-### Daily generation
+**OAuth YouTube :** `client_secret.json` et `token.json` doivent être présents à la racine. Pour générer le token :
+
 ```bash
-python autovideo_daily.py
+python scripts/generate_token.py
 ```
-Produces:
-```
-solar_activity_videos/daily/<YYYY>/<Month>/DDMMYYYY_solar_activity.mp4
-solar_activity_videos/daily/final_video.mp4   # always points to the latest
-```
-* The daily video and commit message use the date of the previous day (J-1, UTC).
 
-### Weekly generation
+---
+
+## Utilisation locale
+
+### Vidéo quotidienne
+
 ```bash
-python autovideo_weekly.py
-```
-Produces:
-```
-solar_activity_videos/weekly/<YYYY>/<Month>/Week n°X (DDMMYYYY-DDMMYYYY).mp4
-solar_activity_videos/weekly/final_video.mp4   # always points to the latest
+python scripts/autovideo_daily.py
 ```
 
-## GitHub Actions & YouTube Upload
-Scheduled workflows:
-* `solar_daily.yml` – every day at 00:00 UTC + manual dispatch.
-* `solar_weekly.yml` – every Monday at 00:00 UTC + manual dispatch.
+Produit :
+- `solar_activity_videos/daily/<YYYY>/<Month>/DDMMYYYY_solar_activity.mp4`
+- `solar_activity_videos/daily/final_video.mp4` (alias mis à jour)
 
-Each workflow:
-- Generates the video(s) and updates the alias `final_video.mp4`.
-- Uploads the latest video to YouTube Shorts with a clear title:
-  - Daily: `Solar Radiation daily — <date J-1>`
-  - Weekly: `Solar Radiation weekly — <week label>`
-- Uses a GitHub secret (`YOUTUBE_TOKEN_JSON`) for authentication (see below).
-- Commits the new video and JSON with a message reflecting the correct date/period.
+> La date utilisée est J-1 (UTC). L'audio `track.mp3` est intégré via ffmpeg (fallback : `moviepy`).
 
-Manual trigger: Actions tab > select workflow > "Run workflow".
+### Vidéo hebdomadaire
 
-## Project Structure
+```bash
+python scripts/autovideo_weekly.py
 ```
-COA-AutoSolarActivid/
-  autovideo_daily.py
-  autovideo_weekly.py
-  requirements.txt
-  solar_activity_videos/
-    daily/<YYYY>/<Month>/DDMMYYYY_solar_activity.mp4
-    daily/final_video.mp4
-    weekly/<YYYY>/<Month>/Week n°X (DDMMYYYY-DDMMYYYY).mp4
-    weekly/final_video.mp4
-  .github/workflows/
-    solar_daily.yml
-    solar_weekly.yml
-```
-Temporary internal folders: `SOHO_videos/`, `SOHO_7days/`, `Protons_7days/`, `Neutrons_7days/`.
-Temporary cache used by weekly protons: `Protons/tmp_7days/`.
-The historical folder `solar_activity/` may still be created by scripts but is no longer used (replaced by direct downloads).
-## Music & Copyright
-**Do not use commercial music (e.g. Bag Raiders, etc.) in the generated videos.**
-To avoid copyright strikes or blocks on YouTube, use royalty-free or Creative Commons music.
 
-Recommended sources:
-- YouTube Audio Library (https://www.youtube.com/audiolibrary)
-- Incompetech (Kevin MacLeod) (https://incompetech.com/music/royalty-free/)
-- FreePD (https://freepd.com/)
+Produit :
+- `solar_activity_videos/weekly/<YYYY>/<Month>/Week n°X (DDMMYYYY-DDMMYYYY).mp4`
+- `solar_activity_videos/weekly/final_video.mp4` (alias mis à jour)
 
-To add music:
-- Download a track and place it in `solar_activity_videos/assets/music/`.
-- Edit `autovideo_daily.py` or `autovideo_weekly.py` to mix the audio (optionally add a `--music` argument).
+> Pas d'audio intégré pour les vidéos hebdomadaires.
 
-## Parameters & Customization
-| Parameter | File | Purpose |
-|-----------|------|---------|
-| `FPS` | `autovideo_daily.py`, `autovideo_weekly.py` | Frames per second (affects smoothness & size). |
-| `DURATION_SEC` | scripts | Final clip duration in seconds. |
-| `TOTAL_FRAMES` | scripts | Derived (FPS * DURATION_SEC). |
-| Neutron stations | `neutron_stations` | Add NMDB codes (e.g. `MOSC`, `APTY`). |
-| Altitudes | `altitudes` dict | Metadata for overlays / future analysis. |
-| Proton energies | regex extraction | Adjust list `[10,50,100,500]`. |
-| Daily retention | purge function | Change 14‑day threshold. |
-| Weekly retention | `MAX_WEEKLY_VIDEOS` | Limit number of stored weekly videos. |
+---
 
-## Troubleshooting
-| Issue | Likely cause | Quick fix |
-|------|--------------|-----------|
-| No SOHO images | Server maintenance / path changed | Check `.lst` URL, retry later. |
-| NMDB timeout | High network latency | Increase `requests.get(..., timeout=30)`. |
-| Empty / black video | Empty image list or Matplotlib figure | Verify time filtering; log image count. |
-| Unplayable MP4 | Codec unsupported by player | Convert via `ffmpeg -i input.mp4 -c copy output.mp4`. |
-| SSL error (weekly) | Using `verify=False` workaround | Provide CA certs or remove `verify=False`. |
-| Missing JSON file | Write permission / missing dir | Ensure `Protons/daily|weekly` hierarchy exists. |
+## GitHub Actions & YouTube
 
-## Naming & Retention
-* Video length: 15 s – 60 FPS (900 frames).
-* Automatic purge > 14 days (daily & weekly).
-* Configurable weekly retention (`MAX_WEEKLY_VIDEOS`).
-* Latest video always available as `final_video.mp4` (daily & weekly).
+| Workflow | Déclencheur | Titre YouTube |
+|----------|-------------|---------------|
+| `solar_daily.yml` | Chaque jour à 00:00 UTC | `Solar Radiation daily — <date J-1>` |
+| `solar_weekly.yml` | Chaque lundi à 00:00 UTC | `Solar Radiation weekly — <label semaine>` |
 
-## Data Sources & Credits
-* SOHO LASCO C2 – © NASA/ESA: https://soho.nascom.nasa.gov
-* GOES Proton Flux – NOAA SWPC: https://services.swpc.noaa.gov
-* NMDB Neutron Monitor Database: https://www.nmdb.eu
+Chaque workflow :
+1. Génère la vidéo et met à jour l'alias `final_video.mp4`.
+2. Publie sur YouTube Shorts via le secret `YOUTUBE_TOKEN_JSON`.
+3. Commit et pousse les nouveaux fichiers (`git pull --rebase` avant push).
 
-Thanks to the providers of public data. Attribution overlays appear on each segment.
-YouTube upload is automated via GitHub Actions and uses a secure OAuth token (see repository secrets).
+**Déclenchement manuel :** onglet Actions > sélectionner le workflow > "Run workflow".
 
-## Contributing
-Suggestions welcome: performance optimizations (e.g. frame interpolation), adding neutron stations, caption internationalization.
-1. Fork
-2. Branch (`git checkout -b feature/my-feature`)
-3. Commit (`git commit -m 'Add: my feature'`)
-4. Push (`git push origin feature/my-feature`)
-5. Open a Pull Request
+---
 
-## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+## Audio et musique
+
+- La vidéo quotidienne intègre `track.mp3` (méthode : ffmpeg `-c:v copy -c:a aac -shortest`, fallback `moviepy`).
+- La description YouTube inclut automatiquement les crédits musicaux :  
+  *Travelers — Andrew Prahlow (Outer Wilds OST), ℗ 2019 Annapurna Interactive.*
+- **Ne pas utiliser de musique commerciale** pour éviter les blocages YouTube.
+- Sources recommandées pour la musique libre :
+  - [YouTube Audio Library](https://www.youtube.com/audiolibrary)
+
+---
+
+## Paramètres & personnalisation
+
+| Paramètre | Emplacement | Description |
+|-----------|-------------|-------------|
+| `FPS` | `autovideo_daily.py`, `autovideo_weekly.py` | Images par seconde |
+| `DURATION_SEC` | scripts | Durée de la vidéo finale (secondes) |
+| `TOTAL_FRAMES` | scripts | Calculé automatiquement (`FPS × DURATION_SEC`) |
+| Stations neutrons | `neutron_stations` | Codes NMDB (ex. `MOSC`, `APTY`) |
+| Altitudes | dict `altitudes` | Métadonnées pour overlays |
+| Énergies protons | extraction regex | Liste `[10, 50, 100, 500]` |
+| Rétention quotidienne | fonction purge | Seuil de 14 jours |
+| Rétention hebdomadaire | `MAX_WEEKLY_VIDEOS` | Nombre max de vidéos conservées |
+
+---
+
+## Dépannage
+
+| Problème | Cause probable | Solution |
+|----------|----------------|----------|
+| Pas d'images SOHO | Maintenance serveur / URL changée | Vérifier l'URL `.lst`, réessayer plus tard |
+| Timeout NMDB | Latence réseau élevée | Augmenter `timeout` dans `requests.get()` |
+| Vidéo noire / vide | Liste d'images vide ou figure Matplotlib vide | Vérifier le filtrage temporel ; logger le nombre d'images |
+| MP4 illisible | Codec non supporté | Remuxer : `ffmpeg -i input.mp4 -c copy output.mp4` |
+| Erreur SSL (hebdo) | `verify=False` contourné | Fournir les certificats CA ou supprimer `verify=False` |
+| JSON manquant | Permission ou dossier absent | Créer `Protons/daily/` et `Protons/weekly/` |
+| `cv2` manquant | Dépendances non installées | `pip install -r requirements.txt` |
+| `git push` rejeté | Conflit distant | `git pull --rebase` puis recommencer |
+
+---
+
+## Sources de données & crédits
+
+| Source | Données | Lien |
+|--------|---------|------|
+| SOHO / SDO | Imagerie solaire | https://soho.nascom.nasa.gov |
+| NOAA GOES / SWPC | Flux de protons | https://services.swpc.noaa.gov |
+| NMDB | Moniteurs à neutrons | https://www.nmdb.eu |
+
+Crédits : ESA & NASA (SOHO/SDO), NOAA NCEI/SWPC (protons), NMDB et stations participantes (neutrons).  
+Les crédits apparaissent en overlay sur chaque segment vidéo.
+
+---
+
+## Licence
+
+Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour les détails.
