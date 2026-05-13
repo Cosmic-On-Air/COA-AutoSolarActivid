@@ -1,4 +1,4 @@
-# COA-AutoSolarActivid
+﻿# COA-AutoSolarActivid
 
 Génère des vidéos d'activité solaire (quotidiennes et hebdomadaires), les publie sur YouTube et archive les fichiers produits.
 
@@ -119,6 +119,8 @@ Chaque workflow :
 - **Ne pas utiliser de musique commerciale** pour éviter les blocages YouTube.
 - Sources recommandées pour la musique libre :
   - [YouTube Audio Library](https://www.youtube.com/audiolibrary)
+  - [Incompetech – Kevin MacLeod](https://incompetech.com/music/royalty-free/)
+  - [FreePD](https://freepd.com/)
 
 ---
 
@@ -162,6 +164,18 @@ Chaque workflow :
 
 Crédits : ESA & NASA (SOHO/SDO), NOAA NCEI/SWPC (protons), NMDB et stations participantes (neutrons).  
 Les crédits apparaissent en overlay sur chaque segment vidéo.
+
+---
+
+## Contribuer
+
+1. Fork du dépôt
+2. Créer une branche : `git checkout -b feature/ma-fonctionnalite`
+3. Committer : `git commit -m 'Add: ma fonctionnalité'`
+4. Pousser : `git push origin feature/ma-fonctionnalite`
+5. Ouvrir une Pull Request
+
+Suggestions bienvenues : interpolation de frames, nouvelles stations neutrons, internationalisation des légendes.
 
 ---
 
