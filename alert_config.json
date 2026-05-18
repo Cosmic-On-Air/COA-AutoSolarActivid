@@ -1,0 +1,19 @@
+{
+  "email": {
+    "enabled": false,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "sender_email": "your_email@gmail.com",
+    "sender_password": "your_app_password",
+    "recipients": [
+      "recipient1@example.com"
+    ]
+  },
+  "alert_cooldown_hours": 6,
+  "min_alert_level": "S2_MODERATE",
+  "monitor_energies": [
+    10,
+    50,
+    100
+  ]
+}
