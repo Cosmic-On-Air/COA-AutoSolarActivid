@@ -126,7 +126,7 @@ def download_soho_images(date):
     base_folder = os.path.join(SOHO_DIR, f"soho_{folder_date_str}_images")
     os.makedirs(base_folder, exist_ok=True)
 
-    lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
+    lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/full_512.lst"
     r = http_get(lst_url, timeout=30, verify=False)
     r.raise_for_status()
     image_filenames = r.text.strip().split('\n')
