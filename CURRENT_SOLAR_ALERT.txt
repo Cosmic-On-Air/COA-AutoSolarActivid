@@ -1,0 +1,22 @@
+╔══════════════════════════════════════════════════════════╗
+║        ALERTE D'ACTIVITÉ SOLAIRE EN COURS                ║
+╚══════════════════════════════════════════════════════════╝
+
+Dernière mise à jour : 2026-05-26 04:59:03 UTC
+
+════════════════════════════════════════════════════════════
+
+🔍 Mode vérification activé (pas d'envoi d'email)
+
+🚨 ALERTE DÉTECTÉE !
+Niveau: S1 - Minor
+
+Détails par énergie:
+  - ≥10.0 MeV: 23.79 pfu
+    Niveau: S1 - Minor
+    Impact: Minor biological risk for astronauts in EVA
+
+════════════════════════════════════════════════════════════
+Source : NOAA SWPC (https://www.swpc.noaa.gov/)
+Système : COA-AutoSolarActivid
+════════════════════════════════════════════════════════════
