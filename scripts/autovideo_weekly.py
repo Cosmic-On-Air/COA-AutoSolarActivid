@@ -127,14 +127,23 @@ def download_soho_images(date):
     base_folder = os.path.join(SOHO_DIR, f"soho_{folder_date_str}_images")
     os.makedirs(base_folder, exist_ok=True)
 
-    # Essayer d'obtenir la liste officielle
+    # Essayer d'obtenir la liste officielle (.full_512.lst puis full_512.lst)
     image_filenames = []
-    lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
-    try:
-        r = http_get(lst_url, timeout=15, verify=False)
-        r.raise_for_status()
-        image_filenames = [line.strip() for line in r.text.strip().split('\n') if line.strip()]
-    except Exception as e:
+    lst_url_candidates = [
+        f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst",
+        f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/full_512.lst",
+    ]
+    for lst_url in lst_url_candidates:
+        try:
+            r = http_get(lst_url, timeout=15)
+            r.raise_for_status()
+            image_filenames = [line.strip() for line in r.text.strip().split('\n') if line.strip()]
+            if image_filenames:
+                break
+        except Exception:
+            continue
+
+    if not image_filenames:
         # Fallback : générer liste par défaut (heures/minutes probables)
         # Pattern : YYYYMMDD_HHMM_c2_512.jpg
         image_filenames = [f"{date_str}_{h:02d}{m:02d}_c2_512.jpg" 
