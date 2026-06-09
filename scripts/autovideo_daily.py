@@ -40,8 +40,13 @@ _SESSION = _make_session()
 
 
 def http_get(url: str, **kwargs) -> requests.Response:
-    """Wrapper requests.get avec retry intégré."""
-    return _SESSION.get(url, **kwargs)
+    """Wrapper requests.get avec retry intégré pour erreurs réseau et serveur."""
+    try:
+        return _SESSION.get(url, **kwargs)
+    except (requests.ConnectionError, requests.Timeout) as e:
+        # Erreurs réseau (NewConnectionError, ReadTimeout, etc)
+        print(f"⚠️  Erreur réseau pour {url}: {type(e).__name__}", file=sys.stderr)
+        raise
 
 
 # --- Parameters ---
@@ -124,33 +129,59 @@ def purge_old_daily_proton_json(root_dir, days=14):
 # SOHO
 # =========================
 def download_soho_images(yesterday):
+    """Télécharge images SOHO pour hier.
+    Essaie d'abord le fichier .full_512.lst, puis fallback sur liste par défaut."""
     date_str = yesterday.strftime('%Y%m%d')
     year = yesterday.strftime('%Y')
     folder_date_str = yesterday.strftime('%d%m%Y')
     base_folder = os.path.join(BASE_DIR, "SOHO_videos", f"soho_{folder_date_str}_images")
     os.makedirs(base_folder, exist_ok=True)
 
+    # Essayer d'obtenir la liste officielle
+    image_filenames = []
     lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
-    r = http_get(lst_url, timeout=30)
-    r.raise_for_status()
-    image_filenames = r.text.strip().split('\n')
+    try:
+        r = http_get(lst_url, timeout=15)
+        r.raise_for_status()
+        image_filenames = [line.strip() for line in r.text.strip().split('\n') if line.strip()]
+        print(f"✅ Liste SOHO récupérée : {len(image_filenames)} images")
+    except Exception as e:
+        print(f"⚠️ Fichier .full_512.lst indisponible ({type(e).__name__}), utilisation liste par défaut...", file=sys.stderr)
+        # Fallback : générer liste par défaut (heures/minutes probables)
+        # Pattern : YYYYMMDD_HHMM_c2_512.jpg
+        image_filenames = [f"{date_str}_{h:02d}{m:02d}_c2_512.jpg" 
+                          for h in range(24) for m in range(0, 60, 15)]  # Tous les 15 min
 
     def download_image(img_name):
         img_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/{img_name}"
         img_path = os.path.join(base_folder, img_name)
         if not os.path.exists(img_path):
-            resp = http_get(img_url, timeout=30)
-            resp.raise_for_status()
-            with open(img_path, 'wb') as f:
-                f.write(resp.content)
+            try:
+                resp = http_get(img_url, timeout=15)
+                resp.raise_for_status()
+                with open(img_path, 'wb') as f:
+                    f.write(resp.content)
+            except Exception:
+                return None  # Image non disponible
         return img_path
 
     with ThreadPoolExecutor(max_workers=10) as executor:
-        image_paths = list(executor.map(download_image, image_filenames))
+        results = list(executor.map(download_image, image_filenames))
+    
+    # Garder uniquement les images téléchargées avec succès
+    image_paths = [p for p in results if p is not None]
+    
+    if not image_paths:
+        raise RuntimeError(f"Aucune image SOHO trouvée pour {date_str}")
+    
+    print(f"✅ {len(image_paths)}/{len(image_filenames)} images SOHO téléchargées")
     return sorted(image_paths)
 
 
 def create_soho_video(image_paths, output_path):
+    if not image_paths:
+        raise ValueError("Aucune image SOHO disponible pour créer la vidéo")
+    
     frame_width, frame_height = 512, 512
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(output_path, fourcc, FPS, (frame_width, frame_height))
@@ -194,10 +225,16 @@ def create_soho_video(image_paths, output_path):
 # PROTONS
 # =========================
 def get_noaa_proton_data_for_yesterday():
+    """Fetch integral-protons-3-day.json from NOAA for yesterday's data."""
     url = "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-3-day.json"
-    r = http_get(url, timeout=30)
-    r.raise_for_status()
-    raw = r.json()
+    try:
+        r = http_get(url, timeout=15)  # Réduit à 15s pour fail faster
+        r.raise_for_status()
+        raw = r.json()
+    except Exception as e:
+        print(f"❌ Protons JSON 3-day indisponible : {type(e).__name__}", file=sys.stderr)
+        raise
+    
     df = pd.DataFrame(raw)
     df["time_tag"] = pd.to_datetime(df["time_tag"], utc=True)
     df["flux"] = df["flux"].astype(float)
@@ -277,6 +314,7 @@ def create_proton_video(df, start, end, output_path):
 # NEUTRONS
 # =========================
 def fetch_neutron_data(start_date, end_date, stations):
+    """Fetch neutron data from NMDB."""
     url = (
         "https://www.nmdb.eu/nest/draw_graph.php?formchk=1&" +
         "&".join([f"stations[]={s}" for s in stations]) +
@@ -284,12 +322,16 @@ def fetch_neutron_data(start_date, end_date, stations):
         f"start_year={start_date.year}&start_month={start_date.month:02d}&start_day={start_date.day:02d}&start_hour=00&start_min=00&"
         f"end_year={end_date.year}&end_month={end_date.month:02d}&end_day={end_date.day:02d}&end_hour=00&end_min=00&tresolution=1&yunits=0"
     )
-    r = http_get(url, timeout=30)
-    r.raise_for_status()
+    try:
+        r = http_get(url, timeout=15)  # Réduit à 15s
+        r.raise_for_status()
+    except Exception as e:
+        print(f"❌ Données neutrons (NMDB) indisponibles : {type(e).__name__}", file=sys.stderr)
+        raise
 
     lines = [l.strip() for l in r.text.splitlines() if re.match(r'^\d{4}-\d{2}-\d{2}', l)]
     if not lines:
-        raise ValueError("No valid data found.")
+        raise ValueError("Pas de données valides du NMDB.")
 
     data = [line.split(";") for line in lines]
     df = pd.DataFrame(data[1:], columns=[c.strip() for c in data[0]])
@@ -387,7 +429,15 @@ def create_neutron_video(df, station_cols, stations, altitudes, output_path):
 # VERTICAL ASSEMBLY
 # =========================
 def assemble_videos_vertically(video_paths, output_path):
-    caps = [cv2.VideoCapture(v) for v in video_paths]
+    """Assemble multiple videos vertically.
+    Skips None values (videos that failed to generate)."""
+    # Filter out None values
+    valid_paths = [v for v in video_paths if v is not None]
+    
+    if not valid_paths:
+        raise ValueError("Aucune vidéo valide à assembler")
+    
+    caps = [cv2.VideoCapture(v) for v in valid_paths]
     widths = [int(c.get(cv2.CAP_PROP_FRAME_WIDTH)) for c in caps]
     heights = [int(c.get(cv2.CAP_PROP_FRAME_HEIGHT)) for c in caps]
 
@@ -468,23 +518,30 @@ if __name__ == "__main__":
     year_str = yesterday.strftime('%Y')
     month_name = calendar.month_name[yesterday.month].capitalize()
 
-    # --- SOHO ---
+    # --- SOHO (OBLIGATOIRE pour YouTube) ---
     try:
         soho_imgs = download_soho_images(yesterday)
+        print(f"✅ {len(soho_imgs)} images SOHO téléchargées")
     except Exception as e:
-        print(f"❌ Impossible de télécharger les images SOHO : {e}", file=sys.stderr)
+        print(f"❌ SOHO requis mais échec du téléchargement : {type(e).__name__}", file=sys.stderr)
+        print(f"   Détails : {e}", file=sys.stderr)
         sys.exit(1)
+    
     soho_vid_path = os.path.join(BASE_DIR, "SOHO_videos", f"soho_{date_folder_str}.mp4")
     soho_vid = create_soho_video(soho_imgs, soho_vid_path)
-
+    
+    # Nettoyer les images SOHO téléchargées
+    soho_folder = os.path.dirname(soho_imgs[0])
     for img_path in soho_imgs:
         try:
             os.remove(img_path)
         except OSError:
             pass
-    soho_folder = os.path.dirname(soho_imgs[0])
-    if not os.listdir(soho_folder):
-        os.rmdir(soho_folder)
+    try:
+        if soho_folder and not os.listdir(soho_folder):
+            os.rmdir(soho_folder)
+    except OSError:
+        pass
 
     # --- PROTONS ---
     try:
@@ -559,7 +616,7 @@ if __name__ == "__main__":
     # Cleanup
     for tmp in [soho_vid, proton_vid, neutron_vid]:
         try:
-            if os.path.exists(tmp):
+            if tmp and os.path.exists(tmp):
                 os.remove(tmp)
         except OSError:
             pass

@@ -119,30 +119,45 @@ def purge_old_weekly_proton_json(root_dir, weeks=4):
 # SOHO
 # =========================
 def download_soho_images(date):
-    """Download SOHO images for the specified day."""
+    """Download SOHO images for the specified day.
+    Essaie d'abord le fichier .full_512.lst, puis fallback sur liste par défaut."""
     date_str = date.strftime('%Y%m%d')
     year = date.strftime('%Y')
     folder_date_str = date.strftime('%d%m%Y')
     base_folder = os.path.join(SOHO_DIR, f"soho_{folder_date_str}_images")
     os.makedirs(base_folder, exist_ok=True)
 
+    # Essayer d'obtenir la liste officielle
+    image_filenames = []
     lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
-    r = http_get(lst_url, timeout=30, verify=False)
-    r.raise_for_status()
-    image_filenames = r.text.strip().split('\n')
+    try:
+        r = http_get(lst_url, timeout=15, verify=False)
+        r.raise_for_status()
+        image_filenames = [line.strip() for line in r.text.strip().split('\n') if line.strip()]
+    except Exception as e:
+        # Fallback : générer liste par défaut (heures/minutes probables)
+        # Pattern : YYYYMMDD_HHMM_c2_512.jpg
+        image_filenames = [f"{date_str}_{h:02d}{m:02d}_c2_512.jpg" 
+                          for h in range(24) for m in range(0, 60, 15)]  # Tous les 15 min
 
     def download_image(img_name):
         img_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/{img_name}"
         img_path = os.path.join(base_folder, img_name)
         if not os.path.exists(img_path):
-            resp = http_get(img_url, timeout=30, verify=False)
-            resp.raise_for_status()
-            with open(img_path, 'wb') as f:
-                f.write(resp.content)
+            try:
+                resp = http_get(img_url, timeout=15, verify=False)
+                resp.raise_for_status()
+                with open(img_path, 'wb') as f:
+                    f.write(resp.content)
+            except Exception:
+                return None  # Image non disponible
         return img_path
 
     with ThreadPoolExecutor(max_workers=10) as executor:
-        image_paths = list(executor.map(download_image, image_filenames))
+        results = list(executor.map(download_image, image_filenames))
+    
+    # Garder uniquement les images téléchargées avec succès
+    image_paths = [p for p in results if p is not None]
     return sorted(image_paths)
 
 # ================
@@ -150,6 +165,9 @@ def download_soho_images(date):
 # ================
 def create_soho_video(image_paths, output_path):
     """Create a 15s SOHO video (small annotation bottom-right)."""
+    if not image_paths:
+        raise ValueError("Aucune image SOHO disponible pour créer la vidéo")
+    
     frame_width, frame_height = 512, 512
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(output_path, fourcc, FPS, (frame_width, frame_height))
@@ -229,10 +247,16 @@ def merge_soho_videos_temporally(video_paths, output_path, target_frames=TOTAL_F
 # PROTONS (unchanged)
 # =========================
 def get_noaa_proton_data_for_week():
+    """Fetch integral-protons-7-day.json from NOAA for weekly data."""
     url = "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-7-day.json"
-    r = http_get(url, timeout=30, verify=False)
-    r.raise_for_status()
-    raw = r.json()
+    try:
+        r = http_get(url, timeout=15)
+        r.raise_for_status()
+        raw = r.json()
+    except Exception as e:
+        print(f"❌ Protons JSON 7-day indisponible : {type(e).__name__}", file=sys.stderr)
+        raise
+    
     df = pd.DataFrame(raw)
     df["time_tag"] = pd.to_datetime(df["time_tag"], utc=True)
     df["flux"] = pd.to_numeric(df["flux"], errors="coerce")
@@ -305,11 +329,16 @@ def fetch_neutron_data(start_date, end_date, stations):
         f"start_year={start_date.year}&start_month={start_date.month:02d}&start_day={start_date.day:02d}&start_hour=00&start_min=00&"
         f"end_year={end_date.year}&end_month={end_date.month:02d}&end_day={end_date.day:02d}&end_hour=00&end_min=00&tresolution=1&yunits=0"
     )
-    r = requests.get(url, timeout=30, verify=False)
-    r.raise_for_status()
+    try:
+        r = http_get(url, timeout=15)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"❌ Données neutrons (NMDB) indisponibles : {type(e).__name__}", file=sys.stderr)
+        raise
+    
     lines = [l.strip() for l in r.text.splitlines() if re.match(r'^\d{4}-\d{2}-\d{2}', l)]
     if not lines:
-        raise ValueError("No valid data found from NMDB.")
+        raise ValueError("Pas de données valides du NMDB.")
     data = [line.split(";") for line in lines]
     df = pd.DataFrame(data[1:], columns=[c.strip() for c in data[0]])
     df["datetime"] = pd.to_datetime(df.iloc[:, 0], errors="coerce")
@@ -470,21 +499,26 @@ if __name__ == "__main__":
     year_str = today.strftime('%Y')
     month_name = calendar.month_name[today.month].capitalize()
 
-    # --- SOHO weekly ---
+    # --- SOHO weekly (OBLIGATOIRE pour YouTube) ---
     soho_video_paths = []
     for i in range(7):
         day = start_date + timedelta(days=i)
         try:
             soho_imgs = download_soho_images(day)
-            vid_path = os.path.join(SOHO_DIR, f"soho_{day.strftime('%d%m%Y')}.mp4")
-            create_soho_video(soho_imgs, vid_path)
-            soho_video_paths.append(vid_path)
+            if soho_imgs:  # Seulement si au moins 1 image disponible
+                vid_path = os.path.join(SOHO_DIR, f"soho_{day.strftime('%d%m%Y')}.mp4")
+                create_soho_video(soho_imgs, vid_path)
+                soho_video_paths.append(vid_path)
         except Exception as e:
-            print(f"⚠️ SOHO skipped {day.date()}: {e}")
+            print(f"⚠️ SOHO skipped {day.date()}: {type(e).__name__}", file=sys.stderr)
 
-    weekly_soho_vid = os.path.join(SOHO_DIR, f"soho_weekly_{date_folder_str}.mp4")
-    if soho_video_paths:
-        weekly_soho_vid = merge_soho_videos_temporally(soho_video_paths, weekly_soho_vid)
+    if not soho_video_paths:
+        print(f"❌ SOHO requis mais aucune image pour la semaine {date_folder_str}", file=sys.stderr)
+        sys.exit(1)
+    
+    weekly_soho_vid_path = os.path.join(SOHO_DIR, f"soho_weekly_{date_folder_str}.mp4")
+    weekly_soho_vid = merge_soho_videos_temporally(soho_video_paths, weekly_soho_vid_path)
+    print(f"✅ SOHO weekly générée avec {len(soho_video_paths)}/7 jours")
     cleanup_old_videos(SOHO_DIR)
 
     # --- PROTONS weekly ---
