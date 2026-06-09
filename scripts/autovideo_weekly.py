@@ -16,12 +16,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import shutil  # alias copy
 import subprocess
 import sys
+import socket
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
 def _make_session() -> requests.Session:
-    """Session HTTP avec retry automatique et backoff exponentiel.
+    """Session HTTP avec retry automatique, backoff exponentiel, et forçage IPv4.
     Réessaie jusqu'à 5 fois sur erreur réseau ou code 5xx."""
     session = requests.Session()
     retry = Retry(
@@ -32,7 +33,14 @@ def _make_session() -> requests.Session:
         allowed_methods=["GET"],
         raise_on_status=False,
     )
-    adapter = HTTPAdapter(max_retries=retry)
+    
+    # Adaptateur custom pour forcer IPv4 (évite les problèmes IPv6)
+    class IPv4HTTPAdapter(HTTPAdapter):
+        def init_poolmanager(self, *args, **kwargs):
+            kwargs["socket_options"] = [(socket.AF_INET, socket.SOCK_STREAM)]
+            return super().init_poolmanager(*args, **kwargs)
+    
+    adapter = IPv4HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     return session
