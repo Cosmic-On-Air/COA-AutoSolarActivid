@@ -66,6 +66,12 @@ TOTAL_FRAMES = FPS * DURATION_SEC
 # ROOT: project root (parent of scripts folder)
 ROOT = Path(__file__).resolve().parents[1]
 BASE_DIR = str(ROOT)
+SOHO_BASE_URLS = (
+    "https://soho.nascom.nasa.gov",
+    "https://soho.esac.esa.int",
+)
+SOHO_LIST_FILENAMES = (".full_512.lst", "full_512.lst")
+SOHO_MAX_FALLBACK_DAYS = 3
 
 # --- Folders ---
 os.makedirs(os.path.join(BASE_DIR, "SOHO_videos"), exist_ok=True)
@@ -137,62 +143,74 @@ def purge_old_daily_proton_json(root_dir, days=14):
 # SOHO
 # =========================
 def download_soho_images(yesterday):
-    """Télécharge images SOHO pour hier.
-    Essaie d'abord le fichier .full_512.lst, puis fallback sur liste par défaut."""
-    date_str = yesterday.strftime('%Y%m%d')
-    year = yesterday.strftime('%Y')
-    folder_date_str = yesterday.strftime('%d%m%Y')
-    base_folder = os.path.join(BASE_DIR, "SOHO_videos", f"soho_{folder_date_str}_images")
-    os.makedirs(base_folder, exist_ok=True)
+    """Télécharge des images SOHO pour hier avec fallback miroir et archive récente."""
+    target_date_str = yesterday.strftime('%Y%m%d')
+    attempted_sources = []
 
-    # Essayer d'obtenir la liste officielle (.full_512.lst puis full_512.lst)
-    image_filenames = []
-    lst_url_candidates = [
-        f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst",
-        f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/full_512.lst",
-    ]
-    for lst_url in lst_url_candidates:
-        try:
-            r = http_get(lst_url, timeout=15)
-            r.raise_for_status()
-            image_filenames = [line.strip() for line in r.text.strip().split('\n') if line.strip()]
-            if image_filenames:
-                print(f"✅ Liste SOHO récupérée ({lst_url}) : {len(image_filenames)} images")
-                break
-        except Exception:
-            continue
+    for day_offset in range(SOHO_MAX_FALLBACK_DAYS + 1):
+        candidate_date = yesterday - timedelta(days=day_offset)
+        candidate_date_str = candidate_date.strftime('%Y%m%d')
+        year = candidate_date.strftime('%Y')
+        folder_date_str = candidate_date.strftime('%d%m%Y')
+        base_folder = os.path.join(BASE_DIR, "SOHO_videos", f"soho_{folder_date_str}_images")
+        os.makedirs(base_folder, exist_ok=True)
 
-    if not image_filenames:
-        print("⚠️ Fichier liste SOHO indisponible, utilisation liste par défaut...", file=sys.stderr)
-        # Fallback : générer liste par défaut (heures/minutes probables)
-        # Pattern : YYYYMMDD_HHMM_c2_512.jpg
-        image_filenames = [f"{date_str}_{h:02d}{m:02d}_c2_512.jpg" 
-                          for h in range(24) for m in range(0, 60, 15)]  # Tous les 15 min
+        for base_url in SOHO_BASE_URLS:
+            attempted_sources.append(f"{candidate_date_str}@{base_url}")
+            image_filenames = []
 
-    def download_image(img_name):
-        img_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/{img_name}"
-        img_path = os.path.join(base_folder, img_name)
-        if not os.path.exists(img_path):
-            try:
-                resp = http_get(img_url, timeout=15)
-                resp.raise_for_status()
-                with open(img_path, 'wb') as f:
-                    f.write(resp.content)
-            except Exception:
-                return None  # Image non disponible
-        return img_path
+            for list_name in SOHO_LIST_FILENAMES:
+                lst_url = f"{base_url}/data/REPROCESSING/Completed/{year}/c2/{candidate_date_str}/{list_name}"
+                try:
+                    r = http_get(lst_url, timeout=15)
+                    r.raise_for_status()
+                    image_filenames = [line.strip() for line in r.text.strip().split('\n') if line.strip()]
+                    if image_filenames:
+                        print(f"✅ Liste SOHO récupérée ({lst_url}) : {len(image_filenames)} images")
+                        break
+                except Exception:
+                    continue
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        results = list(executor.map(download_image, image_filenames))
-    
-    # Garder uniquement les images téléchargées avec succès
-    image_paths = [p for p in results if p is not None]
-    
-    if not image_paths:
-        raise RuntimeError(f"Aucune image SOHO trouvée pour {date_str}")
-    
-    print(f"✅ {len(image_paths)}/{len(image_filenames)} images SOHO téléchargées")
-    return sorted(image_paths)
+            if not image_filenames:
+                print(
+                    f"⚠️ Liste SOHO indisponible pour {candidate_date_str} sur {base_url}, utilisation liste par défaut...",
+                    file=sys.stderr,
+                )
+                image_filenames = [
+                    f"{candidate_date_str}_{h:02d}{m:02d}_c2_512.jpg"
+                    for h in range(24) for m in range(0, 60, 15)
+                ]
+
+            def download_image(img_name):
+                img_url = f"{base_url}/data/REPROCESSING/Completed/{year}/c2/{candidate_date_str}/{img_name}"
+                img_path = os.path.join(base_folder, img_name)
+                if not os.path.exists(img_path):
+                    try:
+                        resp = http_get(img_url, timeout=15)
+                        resp.raise_for_status()
+                        with open(img_path, 'wb') as f:
+                            f.write(resp.content)
+                    except Exception:
+                        return None
+                return img_path
+
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                results = list(executor.map(download_image, image_filenames))
+
+            image_paths = [p for p in results if p is not None]
+            if image_paths:
+                if day_offset:
+                    print(
+                        f"⚠️ Données SOHO indisponibles pour {target_date_str}, utilisation de l'archive du {candidate_date_str}.",
+                        file=sys.stderr,
+                    )
+                if base_url != SOHO_BASE_URLS[0]:
+                    print(f"ℹ️ Miroir SOHO utilisé : {base_url}")
+                print(f"✅ {len(image_paths)}/{len(image_filenames)} images SOHO téléchargées")
+                return sorted(image_paths)
+
+    attempted = ", ".join(attempted_sources)
+    raise RuntimeError(f"Aucune image SOHO trouvée pour {target_date_str} (sources tentées : {attempted})")
 
 
 def create_soho_video(image_paths, output_path):
