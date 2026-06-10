@@ -16,7 +16,7 @@ jobs:
       # 1. Checkout
       # ============================================================
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -24,7 +24,7 @@ jobs:
       # 2. Python
       # ============================================================
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -57,7 +57,7 @@ jobs:
       # 5. Génération vidéo weekly (with automatic retry on network failure)
       # ============================================================
       - name: Run weekly solar activity script
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 90
           max_attempts: 3
@@ -110,7 +110,7 @@ jobs:
       # 8. Artifacts GitHub (conservé)
       # ============================================================
       - name: Upload weekly video as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: solar_activity_video_weekly
           path: |
