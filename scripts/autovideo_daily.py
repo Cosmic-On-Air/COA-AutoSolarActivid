@@ -70,7 +70,7 @@ SOHO_BASE_URLS = (
     "https://soho.nascom.nasa.gov",
     "https://soho.esac.esa.int",
 )
-SOHO_LIST_FILENAMES = (".full_512.lst", "full_512.lst")
+SOHO_LIST_FILENAME_VARIANTS = (".full_512.lst", "full_512.lst")
 SOHO_MAX_FALLBACK_DAYS = 3
 
 # --- Folders ---
@@ -159,7 +159,7 @@ def download_soho_images(yesterday):
             attempted_sources.append(f"{candidate_date_str}@{base_url}")
             image_filenames = []
 
-            for list_name in SOHO_LIST_FILENAMES:
+            for list_name in SOHO_LIST_FILENAME_VARIANTS:
                 lst_url = f"{base_url}/data/REPROCESSING/Completed/{year}/c2/{candidate_date_str}/{list_name}"
                 try:
                     r = http_get(lst_url, timeout=15)

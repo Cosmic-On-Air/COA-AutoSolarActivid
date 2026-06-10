@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from datetime import datetime
+from urllib.parse import urlparse
 from unittest.mock import patch
 
 import requests
@@ -61,11 +62,11 @@ class DownloadSohoImagesTests(unittest.TestCase):
 
         def fake_http_get(url, **kwargs):
             requested_urls.append(url)
-            if "soho.nascom.nasa.gov" in url:
+            if urlparse(url).netloc == "soho.nascom.nasa.gov":
                 return FakeResponse(status_code=404)
             if url.endswith("/20260610/full_512.lst"):
                 return FakeResponse(text="20260610_0000_c2_512.jpg\n")
-            if "soho.esac.esa.int" in url and url.endswith(".jpg"):
+            if urlparse(url).netloc == "soho.esac.esa.int" and url.endswith(".jpg"):
                 return FakeResponse()
             return FakeResponse(status_code=404)
 
