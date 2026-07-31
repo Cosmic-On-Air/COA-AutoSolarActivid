@@ -120,7 +120,7 @@ jobs:
           git config user.email "actions@github.com"
           
           # Ajouter et commiter le fichier unique
-          git pull --rebase
+          git pull --rebase --autostash
           git add CURRENT_SOLAR_ALERT.txt
           git commit -m "� Alerte solaire mise à jour - $(date -u +%Y%m%d_%H%M%S)" || echo "Pas de changement"
           git push || echo "Rien à pousser"
