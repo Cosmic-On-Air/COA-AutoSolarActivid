@@ -76,7 +76,7 @@ title = (
 
 description = (
     "Data Sources & Credits\n"
-    "SOHO LASCO C2 – © NASA/ESA: https://soho.nascom.nasa.gov\n"
+    "SDO AIA 304 Å – Courtesy of NASA/SDO and the AIA, EVE, and HMI science teams: https://sdo.gsfc.nasa.gov\n"
     "GOES Proton Flux – NOAA SWPC: https://services.swpc.noaa.gov\n"
     "NMDB Neutron Monitor Database: https://www.nmdb.eu\n\n"
     "Thanks to the providers of public data.\n"

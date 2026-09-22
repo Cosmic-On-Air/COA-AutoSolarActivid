@@ -55,7 +55,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE_DIR = str(ROOT)
 
 # --- Folders ---
-os.makedirs(os.path.join(BASE_DIR, "SOHO_videos"), exist_ok=True)
+os.makedirs(os.path.join(BASE_DIR, "SDO_videos"), exist_ok=True)
 os.makedirs(os.path.join(BASE_DIR, "solar_activity"), exist_ok=True)
 PROTON_ROOT = os.path.join(BASE_DIR, "Protons")
 os.makedirs(PROTON_ROOT, exist_ok=True)
@@ -121,70 +121,81 @@ def purge_old_daily_proton_json(root_dir, days=14):
 
 
 # =========================
-# SOHO
 # =========================
-def download_soho_images(yesterday):
+# SDO (AIA 304, vidéo quotidienne officielle)
+# =========================
+def download_sdo_video(yesterday):
+    """Télécharge le film quotidien SDO AIA 304 (déjà découpé par la NASA sur 24h)."""
     date_str = yesterday.strftime('%Y%m%d')
-    year = yesterday.strftime('%Y')
+    year_str = yesterday.strftime('%Y')
+    month_str = yesterday.strftime('%m')
+    day_str = yesterday.strftime('%d')
     folder_date_str = yesterday.strftime('%d%m%Y')
-    base_folder = os.path.join(BASE_DIR, "SOHO_videos", f"soho_{folder_date_str}_images")
-    os.makedirs(base_folder, exist_ok=True)
 
-    lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
-    r = http_get(lst_url, timeout=30)
+    url = (
+        f"https://sdo.gsfc.nasa.gov/assets/img/dailymov/{year_str}/{month_str}/{day_str}/"
+        f"{date_str}_1024_0304.mp4"
+    )
+    dest_dir = os.path.join(BASE_DIR, "SDO_videos")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, f"sdo_{folder_date_str}_raw.mp4")
+
+    r = http_get(url, timeout=60, stream=True)
     r.raise_for_status()
-    image_filenames = r.text.strip().split('\n')
-
-    def download_image(img_name):
-        img_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/{img_name}"
-        img_path = os.path.join(base_folder, img_name)
-        if not os.path.exists(img_path):
-            resp = http_get(img_url, timeout=30)
-            resp.raise_for_status()
-            with open(img_path, 'wb') as f:
-                f.write(resp.content)
-        return img_path
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        image_paths = list(executor.map(download_image, image_filenames))
-    return sorted(image_paths)
+    with open(dest_path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=1 << 20):
+            f.write(chunk)
+    return dest_path
 
 
-def create_soho_video(image_paths, output_path):
+def create_sdo_video(src_video_path, output_path):
+    """Rééchantillonne le film SDO du jour sur TOTAL_FRAMES images 512x512 et ajoute la légende."""
     frame_width, frame_height = 512, 512
+    cap = cv2.VideoCapture(src_video_path)
+    n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if n_frames <= 0:
+        cap.release()
+        raise ValueError(f"Vidéo SDO illisible ou vide : {src_video_path}")
+
+    last_idx = min(TOTAL_FRAMES, n_frames) - 1
+    indices = np.linspace(0, n_frames - 1, TOTAL_FRAMES).round().astype(int) if n_frames < TOTAL_FRAMES \
+        else np.linspace(0, TOTAL_FRAMES - 1, TOTAL_FRAMES).round().astype(int)
+    target_set = set(indices.tolist())
+
+    text = "SDO AIA 304A @NASA"   # cv2.putText ne sait pas afficher "Å"
+    font_scale = 0.5
+    thickness = 1
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+    x = frame_width - tw - 10
+    y = frame_height - 12
+
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(output_path, fourcc, FPS, (frame_width, frame_height))
 
-    if len(image_paths) < TOTAL_FRAMES:
-        indices = np.linspace(0, len(image_paths) - 1, TOTAL_FRAMES)
-        frames_to_use = [image_paths[int(i)] for i in indices]
-    else:
-        frames_to_use = image_paths[:TOTAL_FRAMES]
+    frames_by_index = {}
+    fi = 0
+    while fi <= int(indices[-1]):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if fi in target_set:
+            frame = cv2.resize(frame, (frame_width, frame_height), interpolation=cv2.INTER_AREA)
+            cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+            frames_by_index[fi] = frame
+        fi += 1
+    cap.release()
 
-    for img_path in frames_to_use:
-        img = Image.open(img_path).convert('RGB').resize((frame_width, frame_height))
-        frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    if not frames_by_index:
+        video_writer.release()
+        raise ValueError("Aucune frame SDO extraite")
 
-        # ─────────────────────────────────────────────
-        # ⬇️ CORRECTION : légende SOHO à droite + plus petite
-        # ─────────────────────────────────────────────
-        text = "LASCO C2 @NASA/SOHO"
-        font_scale = 0.5
-        thickness = 1
-        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-
-        x = frame_width - tw - 10   # aligné à droite
-        y = frame_height - 12       # bas de l’image
-
-        cv2.putText(
-            frame, text, (x, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale, (255, 255, 255),
-            thickness, cv2.LINE_AA
-        )
-        # ─────────────────────────────────────────────
-
-        video_writer.write(frame)
+    last = None
+    for idx in indices:
+        idx = int(idx)
+        if idx in frames_by_index:
+            last = frames_by_index[idx]
+        video_writer.write(last)   # last est forcément défini au 1er tour (index 0 toujours lu)
 
     video_writer.release()
     return output_path
@@ -468,23 +479,18 @@ if __name__ == "__main__":
     year_str = yesterday.strftime('%Y')
     month_name = calendar.month_name[yesterday.month].capitalize()
 
-    # --- SOHO ---
+    # --- SDO (AIA 304, film quotidien officiel J-1) ---
     try:
-        soho_imgs = download_soho_images(yesterday)
+        sdo_raw = download_sdo_video(yesterday)
     except Exception as e:
-        print(f"❌ Impossible de télécharger les images SOHO : {e}", file=sys.stderr)
+        print(f"❌ Impossible de télécharger la vidéo SDO : {e}", file=sys.stderr)
         sys.exit(1)
-    soho_vid_path = os.path.join(BASE_DIR, "SOHO_videos", f"soho_{date_folder_str}.mp4")
-    soho_vid = create_soho_video(soho_imgs, soho_vid_path)
-
-    for img_path in soho_imgs:
-        try:
-            os.remove(img_path)
-        except OSError:
-            pass
-    soho_folder = os.path.dirname(soho_imgs[0])
-    if not os.listdir(soho_folder):
-        os.rmdir(soho_folder)
+    soho_vid_path = os.path.join(BASE_DIR, "SDO_videos", f"sdo_{date_folder_str}.mp4")
+    try:
+        soho_vid = create_sdo_video(sdo_raw, soho_vid_path)
+    finally:
+        if os.path.exists(sdo_raw):
+            os.remove(sdo_raw)
 
     # --- PROTONS ---
     try:
@@ -564,14 +570,14 @@ if __name__ == "__main__":
         except OSError:
             pass
 
-    soho_dir = os.path.join(BASE_DIR, "SOHO_videos")
+    soho_dir = os.path.join(BASE_DIR, "SDO_videos")
     try:
         if os.path.isdir(soho_dir) and not os.listdir(soho_dir):
             os.rmdir(soho_dir)
     except OSError:
         pass
 
-    delete_old_videos(os.path.join(BASE_DIR, "SOHO_videos"), 14)
+    delete_old_videos(os.path.join(BASE_DIR, "SDO_videos"), 14)
     delete_old_videos(os.path.join(BASE_DIR, "solar_activity_videos", "daily"), 14)
     purge_daily_activity_videos_by_name(BASE_DIR, 14)
 

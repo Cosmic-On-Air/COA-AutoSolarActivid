@@ -83,7 +83,7 @@ MAX_WEEKLY_VIDEOS = 4
 # ROOT: project root (parent of scripts folder)
 ROOT = Path(__file__).resolve().parents[1]
 BASE_DIR = str(ROOT)
-SOHO_DIR = os.path.join(BASE_DIR, "SOHO_7days")
+SOHO_DIR = os.path.join(BASE_DIR, "SDO_7days")
 PROTON_ROOT = os.path.join(BASE_DIR, "Protons")
 PROTON_DIR = os.path.join(PROTON_ROOT, "tmp_7days")
 NEUTRON_DIR = os.path.join(BASE_DIR, "Neutrons_7days")
@@ -116,80 +116,35 @@ def purge_old_weekly_proton_json(root_dir, weeks=4):
                         pass
 
 # =========================
-# SOHO
 # =========================
-def download_soho_images(date):
-    """Download SOHO images for the specified day."""
+# SDO (AIA 304, vidéos quotidiennes officielles)
+# =========================
+def download_sdo_video(date):
+    """Télécharge le film quotidien SDO AIA 304 (déjà découpé par la NASA sur 24h)."""
     date_str = date.strftime('%Y%m%d')
-    year = date.strftime('%Y')
+    year_str = date.strftime('%Y')
+    month_str = date.strftime('%m')
+    day_str = date.strftime('%d')
     folder_date_str = date.strftime('%d%m%Y')
-    base_folder = os.path.join(SOHO_DIR, f"soho_{folder_date_str}_images")
-    os.makedirs(base_folder, exist_ok=True)
 
-    lst_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/.full_512.lst"
-    r = http_get(lst_url, timeout=30, verify=False)
+    url = (
+        f"https://sdo.gsfc.nasa.gov/assets/img/dailymov/{year_str}/{month_str}/{day_str}/"
+        f"{date_str}_1024_0304.mp4"
+    )
+    os.makedirs(SOHO_DIR, exist_ok=True)
+    dest_path = os.path.join(SOHO_DIR, f"sdo_{folder_date_str}.mp4")
+
+    r = http_get(url, timeout=60, stream=True, verify=False)
     r.raise_for_status()
-    image_filenames = r.text.strip().split('\n')
+    with open(dest_path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=1 << 20):
+            f.write(chunk)
+    return dest_path
 
-    def download_image(img_name):
-        img_url = f"https://soho.nascom.nasa.gov/data/REPROCESSING/Completed/{year}/c2/{date_str}/{img_name}"
-        img_path = os.path.join(base_folder, img_name)
-        if not os.path.exists(img_path):
-            resp = http_get(img_url, timeout=30, verify=False)
-            resp.raise_for_status()
-            with open(img_path, 'wb') as f:
-                f.write(resp.content)
-        return img_path
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        image_paths = list(executor.map(download_image, image_filenames))
-    return sorted(image_paths)
-
-# ================
-# SOHO — corrected annotation
-# ================
-def create_soho_video(image_paths, output_path):
-    """Create a 15s SOHO video (small annotation bottom-right)."""
+def merge_sdo_videos_temporally(video_paths, output_path, target_frames=TOTAL_FRAMES):
+    """Concatène les films SDO quotidiens de la semaine et rééchantillonne sur target_frames images 512x512."""
     frame_width, frame_height = 512, 512
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(output_path, fourcc, FPS, (frame_width, frame_height))
-
-    if len(image_paths) < TOTAL_FRAMES:
-        indices = np.linspace(0, len(image_paths) - 1, TOTAL_FRAMES)
-        frames_to_use = [image_paths[int(i)] for i in indices]
-    else:
-        frames_to_use = image_paths[:TOTAL_FRAMES]
-
-    for img_path in frames_to_use:
-        img = Image.open(img_path).convert('RGB').resize((frame_width, frame_height))
-        frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-
-        text = "LASCO C2 @NASA/SOHO"
-        font_scale = 0.45
-        thickness = 1
-        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-
-        x = frame_width - tw - 10   # right
-        y = frame_height - 10       # bottom
-
-        cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX,
-                    font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
-
-        video_writer.write(frame)
-
-    video_writer.release()
-
-    for img_path in image_paths:
-        try: os.remove(img_path)
-        except: pass
-    try: os.rmdir(os.path.dirname(image_paths[0]))
-    except: pass
-
-    return output_path
-
-
-def merge_soho_videos_temporally(video_paths, output_path, target_frames=TOTAL_FRAMES):
-    """Merge SOHO daily videos with small annotation bottom-right."""
     frames_all = []
     for path in video_paths:
         cap = cv2.VideoCapture(path)
@@ -197,27 +152,26 @@ def merge_soho_videos_temporally(video_paths, output_path, target_frames=TOTAL_F
             ret, frame = cap.read()
             if not ret:
                 break
-            frames_all.append(frame.copy())
+            frames_all.append(cv2.resize(frame, (frame_width, frame_height), interpolation=cv2.INTER_AREA))
         cap.release()
 
     if not frames_all:
-        raise ValueError("No SOHO frames found for the week.")
+        raise ValueError("Aucune frame SDO trouvée pour la semaine.")
 
     indices = np.linspace(0, len(frames_all) - 1, target_frames).astype(int)
     sampled_frames = [frames_all[i] for i in indices]
 
-    h, w = sampled_frames[0].shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, FPS, (w, h))
+    out = cv2.VideoWriter(output_path, fourcc, FPS, (frame_width, frame_height))
 
-    text = "LASCO C2 @NASA/SOHO"
+    text = "SDO AIA 304A @NASA"   # cv2.putText ne sait pas afficher "Å"
     font_scale = 0.45
     thickness = 1
     (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+    x = frame_width - tw - 10
+    y = frame_height - 10
 
     for frame in sampled_frames:
-        x = w - tw - 10
-        y = h - 10
         cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
         out.write(frame)
@@ -470,21 +424,21 @@ if __name__ == "__main__":
     year_str = today.strftime('%Y')
     month_name = calendar.month_name[today.month].capitalize()
 
-    # --- SOHO weekly ---
+    # --- SDO weekly : téléchargement des 7 films quotidiens officiels ---
     soho_video_paths = []
     for i in range(7):
         day = start_date + timedelta(days=i)
         try:
-            soho_imgs = download_soho_images(day)
-            vid_path = os.path.join(SOHO_DIR, f"soho_{day.strftime('%d%m%Y')}.mp4")
-            create_soho_video(soho_imgs, vid_path)
-            soho_video_paths.append(vid_path)
+            soho_video_paths.append(download_sdo_video(day))
         except Exception as e:
-            print(f"⚠️ SOHO skipped {day.date()}: {e}")
+            print(f"⚠️ SDO skipped {day.date()}: {e}")
 
-    weekly_soho_vid = os.path.join(SOHO_DIR, f"soho_weekly_{date_folder_str}.mp4")
+    weekly_soho_vid = os.path.join(SOHO_DIR, f"sdo_weekly_{date_folder_str}.mp4")
     if soho_video_paths:
-        weekly_soho_vid = merge_soho_videos_temporally(soho_video_paths, weekly_soho_vid)
+        weekly_soho_vid = merge_sdo_videos_temporally(soho_video_paths, weekly_soho_vid)
+    else:
+        print("❌ Aucune vidéo SDO disponible pour la semaine", file=sys.stderr)
+        sys.exit(1)
     cleanup_old_videos(SOHO_DIR)
 
     # --- PROTONS weekly ---
